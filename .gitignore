@@ -1,0 +1,7 @@
+/crate/Cargo.lock
+/crate/pkg
+/crate/target
+/script/dist
+/script/node_modules
+/script/pkg
+/script/package-lock.json
