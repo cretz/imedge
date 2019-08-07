@@ -11,9 +11,6 @@ module.exports = (env, argv) => {
       // Needed to not use "window" as global
       globalObject: 'this'
     },
-    optimization: {
-      minimize: false
-    },
     resolve: {
       extensions: ['.js', '.ts', '.wasm']
     },
