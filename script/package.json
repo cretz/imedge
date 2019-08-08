@@ -5,6 +5,7 @@
     "build-dev": "webpack --mode=development",
     "build-dev-big": "node --max_old_space_size=4096 ./node_modules/webpack/bin/webpack.js --mode=development",
     "build": "webpack --mode=production",
+    "build-opt": "webpack --mode=production && wasm-opt -Oz -o ../crate/pkg/index_bg.wasm ../crate/pkg/index_bg.wasm",
     "cloudworker": "cloudworker -r dist/index.js"
   },
   "devDependencies": {
