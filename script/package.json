@@ -9,9 +9,7 @@
     "cloudworker": "cloudworker -r dist/index.js"
   },
   "devDependencies": {
-    "@dollarshaveclub/cloudworker": "^0.1.1"
-  },
-  "dependencies": {
+    "@dollarshaveclub/cloudworker": "^0.1.1",
     "@wasm-tool/wasm-pack-plugin": "^1.0.0",
     "ts-loader": "^6.0.4",
     "typescript": "^3.5.3",

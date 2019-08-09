@@ -29,10 +29,9 @@ pub struct WorkingImage {
     fut: Box<Future<Item = ImageInfo, Error = JsValue>>
 }
 
-pub struct ImageInfo {
+struct ImageInfo {
     image: image::DynamicImage,
     headers: web_sys::Headers,
-    #[allow(dead_code)]
     format: ImageFormat,
 }
 
@@ -87,10 +86,28 @@ impl WorkingImage {
         WorkingImage { fut: fut }
     }
 
+    pub fn empty(w: u32, h: u32, color: String) -> WorkingImage {
+        let fut = futures::future::ok(()).and_then(move |_| {
+            let mut new_image = image::DynamicImage::new_rgba8(w, h);
+            let rgba = rgba_string(&color).map_err(err_str_to_js)?;
+            for x in 0..w {
+                for y in 0..h {
+                    new_image.put_pixel(x, y, rgba);
+                }
+            }
+            Ok(ImageInfo {
+                image: new_image,
+                headers: web_sys::Headers::new()?,
+                format: ImageFormat::PNG,
+            })
+        });
+        WorkingImage { fut: Box::new(fut) }
+    }
+
     pub fn build(self, format: Option<ImageFormat>) -> js_sys::Promise {
         future_to_promise(
             self.fut.and_then(move |info| {
-                let out_format = format.unwrap_or(ImageFormat::JPEG);
+                let out_format = format.unwrap_or(info.format);
                 // We'll use the same headers, but remove length and set type
                 let headers = web_sys::Headers::new_with_headers(&info.headers).unwrap();
                 headers.delete("Content-Length").unwrap();
@@ -125,7 +142,7 @@ impl WorkingImage {
         right: f64, right_pct: bool,
         bottom: f64, bottom_pct: bool,
         left: f64, left_pct: bool,
-        color: Option<String>,
+        color: String,
     ) -> WorkingImage {
         WorkingImage{
             fut: Box::new(self.fut.and_then(move |info| {
@@ -140,14 +157,12 @@ impl WorkingImage {
                 h += top_val + bottom_val;
                 let mut new_image = image::DynamicImage::new_rgba8(w, h);
                 new_image.copy_from(&info.image, left_val, top_val);
-                // If there is a color, apply it to the borders
-                if let Some(ref color_str) = color {
-                    let rgba = rgba_string(color_str).map_err(err_str_to_js)?;
-                    for x in 0..w {
-                        for y in 0..h {
-                            if x < left_val || x >= w - right_val || y < top_val || y >= h - bottom_val {
-                                new_image.put_pixel(x, y, rgba);
-                            }
+                // Apply the color
+                let rgba = rgba_string(&color).map_err(err_str_to_js)?;
+                for x in 0..w {
+                    for y in 0..h {
+                        if x < left_val || x >= w - right_val || y < top_val || y >= h - bottom_val {
+                            new_image.put_pixel(x, y, rgba);
                         }
                     }
                 }
@@ -195,6 +210,55 @@ impl WorkingImage {
         WorkingImage{
             fut: Box::new(self.fut.map(move |info| {
                 ImageInfo { image: info.image.grayscale(), ..info }
+            })),
+        }
+    }
+
+    pub fn overlay(
+        self,
+        other: WorkingImage,
+        x: f64, x_pct: bool, halign: Option<i8>, hrepeat: bool,
+        y: f64, y_pct: bool, valign: Option<i8>, vrepeat: bool,
+    ) -> WorkingImage {
+        WorkingImage{
+            fut: Box::new(self.fut.and_then(move |mut orig_info| {
+                other.fut.map(move |mut overlay_info| {
+                    let (orig_w, orig_h) = orig_info.image.dimensions();
+                    let (overlay_w, overlay_h) = overlay_info.image.dimensions();
+                    // If halign is set, left is -1, right is 1, other is center
+                    let x = match halign {
+                        Some(-1) => 0,
+                        Some(1) => (orig_w as i32) - (overlay_w as i32),
+                        Some(_) => ((orig_w as i32) - (overlay_w as i32)) / 2,
+                        None => val_or_pct(orig_w, x, x_pct) as i32,
+                    }.max(-(overlay_w as i32)).min(orig_w as i32);
+                    // If valign is set, top is -1, bottom is 1, other is middle
+                    let y = match valign {
+                        Some(-1) => 0,
+                        Some(1) => (orig_h as i32) - (overlay_h as i32),
+                        Some(_) => ((orig_h as i32) - (overlay_h as i32)) / 2,
+                        None => val_or_pct(orig_h, y, y_pct) as i32,
+                    }.max(-(overlay_h as i32)).min(orig_h as i32);
+                    // If we repeat both, do nested loop. Otherwise, just repeat specific directions
+                    if hrepeat && vrepeat {
+                        for x in (x..(orig_w as i32)).step_by(overlay_w as usize) {
+                            for y in (y..(orig_h as i32)).step_by(overlay_h as usize) {
+                                overlay(&mut orig_info.image, &mut overlay_info.image, x, y);
+                            }
+                        }
+                    } else if hrepeat {
+                        for x in (x..(orig_w as i32)).step_by(overlay_w as usize) {
+                            overlay(&mut orig_info.image, &mut overlay_info.image, x, y);
+                        }
+                    } else if vrepeat {
+                        for y in (y..(orig_h as i32)).step_by(overlay_h as usize) {
+                            overlay(&mut orig_info.image, &mut overlay_info.image, x, y);
+                        }
+                    } else {
+                        overlay(&mut orig_info.image, &mut overlay_info.image, x, y);
+                    }
+                    orig_info
+                })
             })),
         }
     }
@@ -263,14 +327,32 @@ impl WorkingImage {
     }
 }
 
+fn overlay(bottom: &mut image::DynamicImage, top: &mut image::DynamicImage, x: i32, y: i32) {
+    // If x and y are non-negative, do normal. Otherwise crop it.
+    if x >= 0 && y >= 0 {
+        image::imageops::overlay(bottom, top, x as u32, y as u32);
+    } else {
+        let mut new_x = x;
+        let mut new_y = y;
+        let top_x = if x < 0 { new_x = 0; x * -1 } else { 0 } as u32;
+        let top_y = if y < 0 { new_y = 0; y * -1 } else { 0 } as u32;
+        let (mut top_w, mut top_h) = top.dimensions();
+        if top_x < top_w { top_w -= top_x };
+        if top_y < top_h { top_h -= top_y };
+        let new_top = top.crop(top_x, top_y, top_w, top_h);
+        image::imageops::overlay(bottom, &new_top, new_x as u32, new_y as u32);
+    }
+}
+
 fn rgba_string(color: &str) -> Result<image::Rgba<u8>, String> {
-    if color.len() != 6 {
-        return Err("Only hex colors starting with hash currently accepted".to_string())
+    if color.len() != 6 && color.len() != 8 {
+        return Err("Only hex colors currently accepted".to_string())
     }
     let r = u8::from_str_radix(&color[..2], 16).map_err(|e| e.to_string())?;
     let g = u8::from_str_radix(&color[2..4], 16).map_err(|e| e.to_string())?;
-    let b = u8::from_str_radix(&color[4..], 16).map_err(|e| e.to_string())?;
-    Ok(image::Rgba([r, g, b, 0xFF]))
+    let b = u8::from_str_radix(&color[4..6], 16).map_err(|e| e.to_string())?;
+    let a = if color.len() == 8 { u8::from_str_radix(&color[6..], 16).map_err(|e| e.to_string())? } else { 0xFF };
+    Ok(image::Rgba([r, g, b, a]))
 }
 
 fn val_or_pct(orig: u32, v: f64, v_pct: bool) -> u32 {
