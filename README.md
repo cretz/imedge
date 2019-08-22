@@ -4,6 +4,10 @@ This is a service worker script to manipulate images using [image-rs](https://gi
 WebAssembly. It is built as an example to show image manipulation, not as a full-fledged image manipulation/optimization
 solution.
 
+It has been tested on
+[StackPath Serverless Scripting](https://www.stackpath.com/products/edge-computing/serverless-scripting/) and is based
+on the [Serverless Scripting Rust+WASM example](https://github.com/stackpath/serverless-scripting-examples/tree/master/wasm-rust).
+
 ### Usage
 
 When built and running (see later sections), this operates at a URL and is based on query parameters. Unless otherwise
