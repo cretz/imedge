@@ -6,7 +6,7 @@ solution.
 
 It has been tested on
 [StackPath Serverless Scripting](https://www.stackpath.com/products/edge-computing/serverless-scripting/) and is based
-on the [Serverless Scripting Rust+WASM example](https://github.com/stackpath/serverless-scripting-examples/tree/master/wasm-rust).
+on the [Serverless Scripting Rust+WASM example](https://github.com/stackpath/serverless-scripting-examples/tree/master/wasm-rust). This is a full-fledged version of the example in [this StackPath blog post](https://blog.stackpath.com/image-manipulation/).
 
 ### Usage
 
